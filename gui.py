@@ -21,6 +21,9 @@ SETTINGS_FILE = Path(__file__).with_name('settings.json')  # Remembers the optio
 POLL_MS = 100
 MAX_WORKERS = 8
 RENAME_EXAMPLES = 5     # Files listed when asking whether to rename
+TITLE_CHARS = 70        # Longer titles are cut off in the per-file progress rows
+BAR_COLOR = '#06b025'   # Same green as the overall bar
+TROUGH_COLOR = '#e6e6e6'
 SEP = '  ·  '
 
 
@@ -37,6 +40,10 @@ def fmt_time(seconds):
     m, s = divmod(int(seconds), 60)
     h, m = divmod(m, 60)
     return f"{h}:{m:02}:{s:02}" if h else f"{m}:{s:02}"
+
+
+def shorten(text, limit):
+    return text if len(text) <= limit else text[:limit - 1] + '…'
 
 
 def quality_labels(fmt):
@@ -86,6 +93,47 @@ class ActiveFile:
     def part_finished(self):
         self.done_parts = self.downloaded
         self.processing = True
+
+
+class ThinBar(tk.Canvas):
+    """A slim progress bar, so per-file bars can't be mistaken for the overall one."""
+    HEIGHT = 6
+
+    def __init__(self, master):
+        super().__init__(master, height=self.HEIGHT, bg=TROUGH_COLOR, highlightthickness=0)
+        self.fraction = 0
+        self.fill = self.create_rectangle(0, 0, 0, self.HEIGHT, fill=BAR_COLOR, width=0)
+        self.bind('<Configure>', lambda e: self.set(self.fraction))
+
+    def set(self, fraction):
+        self.fraction = fraction
+        self.coords(self.fill, 0, 0, self.winfo_width() * fraction, self.HEIGHT)
+
+
+class FileRow(ttk.Frame):
+    """Progress of one running download: title and details on top, a thin bar below."""
+
+    def __init__(self, master):
+        super().__init__(master)
+        self.columnconfigure(0, weight=1)
+        self.title = ttk.Label(self, anchor='w')
+        self.title.grid(row=0, column=0, sticky='w')
+        self.info = ttk.Label(self, foreground='gray')
+        self.info.grid(row=0, column=1, sticky='e', padx=(12, 0))
+        self.bar = ThinBar(self)
+        self.bar.grid(row=1, column=0, columnspan=2, sticky='we', pady=(1, 0))
+
+    def show(self, active):
+        self.title.config(text=shorten(active.title, TITLE_CHARS))
+        if active.processing:
+            self.bar.set(1)
+            self.info.config(text="Converting / merging...")
+            return
+        fraction = active.downloaded / active.total if active.total else 0
+        self.bar.set(fraction)
+        size = fmt_bytes(active.downloaded) + (f" of {fmt_bytes(active.total)}" if active.total else '')
+        speed = f"{fmt_bytes(active.speed)}/s" if active.speed else '-- /s'
+        self.info.config(text=SEP.join((f"{fraction:.0%}", size, speed, f"ETA {fmt_time(active.eta)}")))
 
 
 class Stats:
@@ -270,7 +318,11 @@ class App(tk.Tk):
             info.grid(row=r + 1, column=1, columnspan=2, sticky='w', padx=6, pady=(0, 4))
             return progress, pct, info
 
-        self.file_bar, self.file_pct, self.file_info = bar(1, "File:")
+        ttk.Label(frame, text="Files:").grid(row=1, column=0, sticky='nw', padx=6, pady=(6, 0))
+        self.files_box = ttk.Frame(frame)
+        self.files_box.grid(row=1, column=1, columnspan=2, sticky='we', padx=6, pady=(6, 4))
+        self.no_files = ttk.Label(self.files_box, text="No downloads running", foreground='gray')
+        self.file_rows = {}     # worker key -> FileRow
         self.overall_bar, self.overall_pct, self.overall_info = bar(3, "Overall:")
 
     def build_log(self):
@@ -294,7 +346,7 @@ class App(tk.Tk):
         return values[self.quality_box.current()]
 
     def update_example(self):
-        name = "Song Title" + (" - Channel" if self.naming_var.get() == 'title_channel' else '')
+        name = "YT Title" + (" - Channel" if self.naming_var.get() == 'title_channel' else '')
         if self.quality_name_var.get():
             quality = self.selected_quality()
             if self.format_var.get() == 'mp3':
@@ -408,12 +460,10 @@ class App(tk.Tk):
 
     def reset_progress(self):
         self.stats = Stats()
-        for progress in (self.file_bar, self.overall_bar):
-            progress.config(maximum=1, value=0)
-        for label in (self.file_pct, self.overall_pct):
-            label.config(text="0%")
-        for label in (self.file_info, self.overall_info):
-            label.config(text="")
+        self.overall_bar.config(maximum=1, value=0)
+        self.overall_pct.config(text="0%")
+        self.overall_info.config(text="")
+        self.refresh_files()
         self.status.config(text="Idle")
 
     def handle(self, event):
@@ -445,7 +495,6 @@ class App(tk.Tk):
                 stats.active.clear()
                 self.set_running(False)
                 self.status.config(text="Finished")
-                self.file_info.config(text="")
 
     def ask_rename(self, renames):
         examples = '\n'.join(f"{os.path.basename(old)}  ->  {os.path.basename(new)}"
@@ -474,8 +523,7 @@ class App(tk.Tk):
             pass
         if lines:
             self.append_log('\n'.join(lines))
-        if self.stats.running:
-            self.refresh_file()
+        self.refresh_files()
         self.refresh_overall()
         self.after(POLL_MS, self.poll)
 
@@ -487,24 +535,26 @@ class App(tk.Tk):
         if at_bottom:  # Don't yank the view away while the user scrolls back
             self.log_text.see('end')
 
-    def refresh_file(self):
-        # The file bar follows the oldest running download; the others are counted in the status line
-        if not self.stats.active:
+    def refresh_files(self):
+        """One thin bar per running download, oldest first."""
+        active = self.stats.active
+        for key in self.file_rows.keys() - active.keys():
+            self.file_rows.pop(key).destroy()
+        for key, file in active.items():
+            if key not in self.file_rows:
+                self.file_rows[key] = FileRow(self.files_box)
+                self.file_rows[key].pack(fill='x', pady=(0, 4))
+            self.file_rows[key].show(file)
+
+        if not active:
+            if not self.no_files.winfo_manager():
+                self.no_files.pack(anchor='w')
             return
-        active = next(iter(self.stats.active.values()))
-        extra = len(self.stats.active) - 1
-        self.status.config(text=f"Downloading: {active.title}" + (f"  (+{extra} more in parallel)" if extra else ''))
-        if active.processing:
-            self.file_bar.config(maximum=1, value=1)
-            self.file_pct.config(text="100%")
-            self.file_info.config(text="Converting / merging...")
-            return
-        fraction = active.downloaded / active.total if active.total else 0
-        self.file_bar.config(maximum=1, value=fraction)
-        self.file_pct.config(text=f"{fraction:.0%}")
-        size = fmt_bytes(active.downloaded) + (f" of {fmt_bytes(active.total)}" if active.total else '')
-        speed = f"{fmt_bytes(active.speed)}/s" if active.speed else '-- /s'
-        self.file_info.config(text=SEP.join((size, speed, f"ETA {fmt_time(active.eta)}")))
+        self.no_files.pack_forget()
+        if self.stats.running:
+            first = next(iter(active.values()))
+            self.status.config(text=f"Downloading: {first.title}" if len(active) == 1
+                               else f"Downloading {len(active)} files in parallel")
 
     def refresh_overall(self):
         stats = self.stats

@@ -13,6 +13,28 @@ failed.txt
 *.csv
 !playlists.example.csv
 
+# Media files, wherever the output folder is
+*.mp3
+*.mp4
+*.m4a
+*.aac
+*.opus
+*.ogg
+*.wav
+*.flac
+*.webm
+*.mkv
+*.mov
+*.avi
+*.flv
+*.3gp
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.vtt
+*.srt
+
 # Leftovers from interrupted downloads
 *.part
 *.ytdl

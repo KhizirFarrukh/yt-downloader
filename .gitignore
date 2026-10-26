@@ -9,6 +9,10 @@ downloads/
 settings.json
 failed.txt
 
+# Your own playlist lists; only the example is kept
+*.csv
+!playlists.example.csv
+
 # Leftovers from interrupted downloads
 *.part
 *.ytdl

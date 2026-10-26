@@ -45,14 +45,18 @@ Your options are remembered in `settings.json` between runs.
 ### CSV format
 
 Either a plain list of URLs in the first column, or a header row with a `url` column and an optional
-`folder` column naming the subfolder of the output folder to save into (`.` saves straight into the
-output folder). Blank rows and rows starting with `#` are ignored.
+`folder` column naming the subfolder of the output folder to save into. An empty `folder` uses the
+playlist's name, and `.` saves straight into the output folder. Blank rows and rows starting with `#`
+are ignored.
 
 ```csv
 url,folder
 https://youtube.com/playlist?list=...,Road Trip
 https://youtube.com/playlist?list=...,.
 ```
+
+See [playlists.example.csv](playlists.example.csv); copy it to e.g. `playlists.csv` and fill in your
+own URLs. Your own `.csv` files are ignored by git.
 
 ### Cookies
 

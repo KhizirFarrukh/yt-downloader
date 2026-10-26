@@ -1,0 +1,9 @@
+# Copy this file (e.g. to playlists.csv) and load it with "Load CSV..." in the app.
+# "url" is required. "folder" is optional: the subfolder of the output folder to save into.
+# Leave it empty to use the playlist's name, or use . to save straight into the output folder.
+# Rows starting with # and blank rows are ignored.
+url,folder
+https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,Road Trip
+https://www.youtube.com/playlist?list=PLyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy,
+https://www.youtube.com/watch?v=xxxxxxxxxxx,.
+https://music.youtube.com/watch?v=yyyyyyyyyyy,Singles

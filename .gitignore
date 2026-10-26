@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Downloaded files and per-machine settings
+downloads/
+settings.json
+failed.txt
+
+# Leftovers from interrupted downloads
+*.part
+*.ytdl
